@@ -1,14 +1,42 @@
+import os
+from pathlib import Path
+from typing import TypedDict
+
 import psycopg2
+from dotenv import load_dotenv
 from psycopg2.extensions import connection as PgConnection
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+
+class PostgresConfig(TypedDict):
+    host: str
+    port: int
+    user: str
+    password: str
+    dbname: str
+
+
+def db_config_from_env() -> PostgresConfig:
+    password = os.getenv("POSTGRES_PASSWORD")
+    if not password:
+        raise RuntimeError("POSTGRES_PASSWORD is not set in .env")
+    return {
+        "host": os.getenv("POSTGRES_HOST", "localhost"),
+        "port": int(os.getenv("POSTGRES_PORT", "5432")),
+        "user": os.getenv("POSTGRES_USER", "postgres"),
+        "password": password,
+        "dbname": os.getenv("POSTGRES_DB", "postgres"),
+    }
 
 
 class DatabaseUtil:
 
-    def __init__(self, db_config):
-        self.db_config = db_config
+    def __init__(self):
+        self.db_config = db_config_from_env()
         self.connection: PgConnection | None
         try: 
-            self.connection = psycopg2.connect(**db_config) 
+            self.connection = psycopg2.connect(**self.db_config) 
 
         except Exception as e:
             print(f"Error connecting to the database: {e}")
@@ -82,15 +110,8 @@ class DatabaseUtil:
             connection.close()
 
 
-obj = DatabaseUtil({
-    "host": "localhost",
-    "port": 5432,
-    "user": "postgres",
-    "password": "potgres",
-    "dbname": "postgres"
-})
-
-result = obj.schema_details("public")
-
-with open("test_schema_details.txt", "w") as f:
-    f.write(result)
+if __name__ == "__main__":
+    obj = DatabaseUtil()
+    result = obj.schema_details("public")
+    with open("test_schema_details.txt", "w") as f:
+        f.write(result)
