@@ -1,0 +1,30 @@
+---
+description: Always commit as javakishore-veleti; never use an AI or tool name
+alwaysApply: true
+---
+
+# Git author identity (mandatory)
+
+Git commits in this repo MUST be authored as the user's GitHub account. Never use an AI, model, or tool name as author, committer, or trailer.
+
+## Required identity
+
+- **Author name:** `javakishore-veleti`
+- **Author email:** `6062900+javakishore-veleti@users.noreply.github.com`
+
+## Rules
+
+1. **Never** author commits as Cursor, Cursor Grok, Grok, Claude, Copilot, ChatGPT, GPT, "AI Assistant", or any non-user identity.
+2. **Do not** pass `--author`. Use the existing git config only. **Do not** run `git config` to change identity.
+3. After every commit, verify author **and** that the message has no AI trailer:
+
+```bash
+git log -1 --format='%an <%ae>%n%cn <%ce>%n%B'
+```
+
+Expected author/committer: `javakishore-veleti <6062900+javakishore-veleti@users.noreply.github.com>`
+
+The body must **not** contain `Co-authored-by: Cursor`, `cursoragent@cursor.com`, or any AI trailer. Cursor's git wrapper may inject this automatically — strip it with `git commit-tree` (do not leave it for GitHub contributors).
+
+4. Do not add `Co-authored-by` / `Signed-off-by` for an AI. Primary `Author` stays the identity above.
+5. Applies to Agent, Shell, Task/subagents, Cloud Agents, and any scripted `git commit`.
