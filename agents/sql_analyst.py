@@ -5,6 +5,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.llm_pickup import pick_llm
 from utils.database import DatabaseUtil
+from utils.safety import as_text, sql_keyword_eval
 from Models.schema import AgentSchema, JudgeSchema
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import StateGraph, START, END
@@ -74,7 +75,7 @@ def generate_sql(state: AgentSchema) -> AgentSchema:
 
     llm = pick_llm("medium")  # Pick the appropriate LLM based on the level of the question
 
-    generated_sql_query = llm.invoke(prompt).content  # Generate the SQL query using the LLM
+    generated_sql_query = as_text(llm.invoke(prompt).content)
 
     state.generated_sql_query = generated_sql_query
     print(f"Generated SQL query: {state.generated_sql_query}")
@@ -82,8 +83,18 @@ def generate_sql(state: AgentSchema) -> AgentSchema:
     return state
 
 
+def keyword_sql_eval(state: AgentSchema) -> dict:
+    """Fail-closed keyword / multi-statement check. No LLM."""
+    ok, reason = sql_keyword_eval(state.generated_sql_query)
+    print(f"SQL keyword eval: {reason}")
+    return {
+        "keyword_safe": "Yes" if ok else "No",
+        "keyword_comments": reason,
+    }
+
+
 # Is safe Node
-def is_safe_sql(state: AgentSchema) -> AgentSchema:
+def is_safe_sql(state: AgentSchema) -> dict:
 
     sql_query = state.generated_sql_query
 
@@ -100,11 +111,30 @@ def is_safe_sql(state: AgentSchema) -> AgentSchema:
     Here's the SQL query to evaluate:
     {sql_query}"""
 
-    response = llm_judge.invoke(prompt).model_dump()  # Get the structured output as a dictionary
-    state.is_safe = response['answer']
-    state.comments = response['comments']
+    judge_result = llm_judge.invoke(prompt)
+    if isinstance(judge_result, JudgeSchema):
+        answer, comments = judge_result.answer, judge_result.comments
+    elif isinstance(judge_result, dict):
+        answer, comments = judge_result["answer"], judge_result["comments"]
+    else:
+        return {"is_safe": "No", "comments": f"Unexpected judge output type: {type(judge_result)}"}
 
-    return state
+    return {"is_safe": answer, "comments": comments}
+
+
+def sql_safety_consensus(state: AgentSchema) -> dict:
+    """Any eval fail → No. Do not average scores."""
+    reasons: list[str] = []
+    if state.keyword_safe != "Yes":
+        reasons.append(state.keyword_comments or "Keyword eval failed.")
+    if str(state.is_safe).lower() != "yes":
+        reasons.append(state.comments or "LLM judge rejected the query.")
+    if reasons:
+        combined = " ".join(reasons)
+        print(f"SQL safety consensus: blocked. {combined}")
+        return {"is_safe": "No", "comments": combined}
+    print("SQL safety consensus: passed.")
+    return {"is_safe": "Yes"}
 
 
 # Canceled SQL Query Node
@@ -174,7 +204,9 @@ sql_agent_graph = StateGraph(AgentSchema)
 sql_agent_graph.add_node(curate_ques,name="curate_ques")
 sql_agent_graph.add_node(prompt_query_context,name="prompt_query_context")
 sql_agent_graph.add_node(generate_sql,name="generate_sql")
+sql_agent_graph.add_node(keyword_sql_eval,name="keyword_sql_eval")
 sql_agent_graph.add_node(is_safe_sql,name="is_safe_sql")
+sql_agent_graph.add_node(sql_safety_consensus,name="sql_safety_consensus")
 sql_agent_graph.add_node(canceled_sql,name="canceled_sql")
 sql_agent_graph.add_node(execute_sql,name="execute_sql")
 sql_agent_graph.add_node(represent_final_answer,name="represent_final_answer")
@@ -183,9 +215,12 @@ sql_agent_graph.add_node(represent_final_answer,name="represent_final_answer")
 sql_agent_graph.add_edge(START, "curate_ques")
 sql_agent_graph.add_edge("curate_ques", "prompt_query_context")
 sql_agent_graph.add_edge("prompt_query_context", "generate_sql")
+# Keyword eval and LLM judge run in parallel, then join at consensus (fail closed).
+sql_agent_graph.add_edge("generate_sql", "keyword_sql_eval")
 sql_agent_graph.add_edge("generate_sql", "is_safe_sql")
+sql_agent_graph.add_edge("keyword_sql_eval", "sql_safety_consensus")
+sql_agent_graph.add_edge("is_safe_sql", "sql_safety_consensus")
 
-# Codintional Edge Function
 def is_safe_sql_edge(state: AgentSchema) -> str:
     is_safe = state.is_safe
 
@@ -195,7 +230,7 @@ def is_safe_sql_edge(state: AgentSchema) -> str:
     else :
         return "canceled_sql"
 
-sql_agent_graph.add_conditional_edges("is_safe_sql", is_safe_sql_edge,
+sql_agent_graph.add_conditional_edges("sql_safety_consensus", is_safe_sql_edge,
                                       {
                                           "execute_sql": "execute_sql",
                                           "canceled_sql": "canceled_sql"

@@ -5,6 +5,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.llm_pickup import pick_llm
 from utils.etl_tools import ETLTools
+from utils.safety import as_text, pandas_code_is_safe, validate_etl_tool
 from Models.schema import ETLAgentSchema
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph import StateGraph, START, END
@@ -72,10 +73,12 @@ def transform_load_tool(input_file_path:str,output_folder:str,output_format:str,
 
     response = llm.invoke(prompt).content 
 
-    # Optional Cleaning
-    pandas_code = response.strip().strip('```').strip().lstrip('python').strip()
+    pandas_code = as_text(response).strip().strip('```').strip().lstrip('python').strip()
 
-    # Execute the Pandas code
+    ok, reason = pandas_code_is_safe(pandas_code)
+    if not ok:
+        return f"Transform blocked: {reason}\n\nPandas Code:\n{pandas_code}"
+
     results = etl_tools.execute_code(pandas_code)
 
     return f"The data is transformed and saved at {output_folder} in {output_format} format. \n\n Pandas Code Executed: \n {pandas_code} \n\n Execution Result: \n {results}"
@@ -109,6 +112,39 @@ def llm_node(state:ETLAgentSchema):
     return state
 
 
+def _iter_tool_calls(message):
+    calls = getattr(message, "tool_calls", None) or []
+    for call in calls:
+        if isinstance(call, dict):
+            yield call.get("name"), call.get("args") or {}, call.get("id")
+        else:
+            yield call["name"], call.get("args") or {}, call["id"]
+
+
+def etl_tool_safety_eval(state: ETLAgentSchema) -> dict:
+    """Fail-closed: URL, format, and paths under data/extract or data/transform."""
+    last = state.messages[-1]
+    reasons: list[str] = []
+    blocked_messages: list[ToolMessage] = []
+    for name, args, call_id in _iter_tool_calls(last):
+        ok, reason = validate_etl_tool(name, args)
+        if not ok:
+            reasons.append(reason)
+            blocked_messages.append(
+                ToolMessage(content=f"Blocked: {reason}", tool_call_id=call_id or "blocked")
+            )
+    if reasons:
+        comments = "; ".join(reasons)
+        print(f"ETL tool safety: blocked. {comments}")
+        return {
+            "etl_safe": "No",
+            "etl_safety_comments": comments,
+            "messages": blocked_messages,
+        }
+    print("ETL tool safety: passed.")
+    return {"etl_safe": "Yes", "etl_safety_comments": ""}
+
+
 def tool_node(state:ETLAgentSchema):
     """
     This node is responsible for invoking the appropriate tool based on the user's question and the context provided by the LLM.
@@ -135,24 +171,40 @@ def tool_node(state:ETLAgentSchema):
 # Nodes & Edges
 etl_analyst_graph = StateGraph(ETLAgentSchema)
 etl_analyst_graph.add_node("llm_node", llm_node)
+etl_analyst_graph.add_node("etl_tool_safety_eval", etl_tool_safety_eval)
 etl_analyst_graph.add_node("tool_node", tool_node)
 
 etl_analyst_graph.add_edge(START, "llm_node")
 
 def is_tool_call(state:ETLAgentSchema):
-    tool_calls = state.messages[-1].tool_calls
+    tool_calls = getattr(state.messages[-1], "tool_calls", None)
 
     if tool_calls:
-        return "tool_node"
+        return "etl_tool_safety_eval"
     else:
         return "end"
 
 etl_analyst_graph.add_conditional_edges(
     "llm_node",is_tool_call,
     {
-        "tool_node": "tool_node",
+        "etl_tool_safety_eval": "etl_tool_safety_eval",
         "end": END
     }
+)
+
+def etl_safety_edge(state: ETLAgentSchema) -> str:
+    if state.etl_safe == "Yes":
+        return "tool_node"
+    # ToolMessages with Blocked: already appended; send the model back without executing.
+    return "llm_node"
+
+etl_analyst_graph.add_conditional_edges(
+    "etl_tool_safety_eval",
+    etl_safety_edge,
+    {
+        "tool_node": "tool_node",
+        "llm_node": "llm_node",
+    },
 )
 
 etl_analyst_graph.add_edge("tool_node", "llm_node")

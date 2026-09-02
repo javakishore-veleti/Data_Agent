@@ -21,11 +21,44 @@ A LangGraph data agent that classifies a natural-language request as **SQL** or 
 
 The router and ETL path use Claude. The SQL path uses OpenAI models of increasing size for curation, generation, and the safety judge.
 
+## Table of contents
+
+- [Why LangGraph and LangChain](#why-langgraph-and-langchain)
+- [Architecture](#architecture)
+- [Evaluation and in-graph safety](#evaluation-and-in-graph-safety)
+- [Repository layout](#repository-layout)
+- [Requirements](#requirements)
+- [Setup](#setup)
+- [Run](#run)
+- [Models](#models)
+- [License](#license)
+
+## Why LangGraph and LangChain
+
+This repo uses **both**. LangChain talks to models and tools. LangGraph is the **workflow** that decides what runs next.
+
+LangChain is good at one step: `llm.invoke(...)`, `bind_tools`, `with_structured_output`. It is a poor fit when the next step **depends on state**:
+
+| This code | Why a graph helps |
+| --- | --- |
+| Router: `sql` or `etl` | Conditional branch after the classifier |
+| SQL: generate → judge → execute **or** cancel | A safety gate, not a straight chain |
+| ETL: LLM → tools → LLM until no tool calls | A loop, not a fixed pipeline |
+| `DataAgentSchema` / `AgentSchema` | Shared state (`messages`, `route_response`, `is_safe`) |
+
+A LangChain sequential chain always goes A → B → C. You would have to write your own `if` / `while` around those calls. LangGraph is that control flow: nodes, edges, and `add_conditional_edges`.
+
+- **LangChain** — the workers (Claude, OpenAI, tools, structured output)
+- **LangGraph** — the supervisor (route, loop, stop)
+
+You would not replace LangGraph with “just LangChain” unless you flattened those branches and loops into handwritten Python. You also would not drop LangChain: `pick_llm`, tools, and messages already come from it.
+
 ## Architecture
 
 ```text
 START
-  → router_node          # structured output: "sql" | "etl"
+  → router_node
+  → route_safety_eval      # sql | etl only; else route_rejected_node → END
        ├─ sql_node  → SQL analyst subgraph
        └─ etl_node  → ETL analyst subgraph
 ```
@@ -33,16 +66,26 @@ START
 **SQL analyst**
 
 ```text
-curate_ques → prompt_query_context → generate_sql → is_safe_sql
-                                                 ├─ Yes → execute_sql → represent_final_answer → END
-                                                 └─ No  → canceled_sql → END
+curate_ques → prompt_query_context → generate_sql
+                 ├─ keyword_sql_eval     # no LLM: writes / stacked statements
+                 └─ is_safe_sql          # LLM JudgeSchema
+                        ↓
+              sql_safety_consensus       # any fail → No
+                 ├─ Yes → execute_sql → represent_final_answer → END
+                 └─ No  → canceled_sql → END
 ```
 
 **ETL analyst**
 
 ```text
-START → llm_node → (tool calls?) → tool_node → llm_node → END
+START → llm_node → (tool calls?)
+                 ├─ no  → END
+                 └─ yes → etl_tool_safety_eval   # URL, format, path under data/
+                            ├─ Yes → tool_node → llm_node
+                            └─ No  → llm_node (blocked ToolMessage, no exec)
 ```
+
+`transform_load_tool` also runs a Pandas snippet check before `exec`.
 
 ETL tools:
 
@@ -50,6 +93,22 @@ ETL tools:
 | --- | --- |
 | `extract_load_tool` | `GET` an API, flatten `results` with Pandas, write `extracted_data.{csv\|json\|parquet}` |
 | `transform_load_tool` | Sample the file, generate Pandas, `exec` it, write into the transform folder |
+
+## Evaluation and in-graph safety
+
+This project does **not** add commercial eval or observability products (Galileo, LangSmith, Arize, Langfuse Cloud, Braintrust, W&B, Confident AI, and similar). Safety lives in the graphs and in local tests.
+
+**In the graph (fail closed):** extra nodes after a risky step, then a consensus that **stops** if any check fails — no averaging LLM scores.
+
+| Pipeline | Checks |
+| --- | --- |
+| Router | `route_safety_eval`: `answer` is only `sql` or `etl` |
+| SQL | `keyword_sql_eval` + `is_safe_sql` → `sql_safety_consensus`; any fail → `canceled_sql` |
+| ETL | `etl_tool_safety_eval` before tools; Pandas pattern check before `exec` |
+
+**Offline:** **pytest** plus gold JSON (router `sql` vs `etl`, judge Yes/No on fixed queries, ETL file fixtures). No LLM-as-a-service leaderboard.
+
+The SQL subgraph keeps the LLM gate (`is_safe_sql`). The keyword check runs beside it and **vetoes** execution. Helpers live in `utils/safety.py`.
 
 ## Repository layout
 
@@ -64,6 +123,7 @@ utils/
   llm_pickup.py         # pick_llm("low"|"medium"|"high"|"claude")
   database.py           # Postgres connect, schema dump, execute
   etl_tools.py          # extract / preview / execute generated Pandas
+  safety.py             # fail-closed SQL/ETL/path checks (no commercial evals)
 data/
   users.csv, rides.csv, vehicles.csv, payments.csv, ratings.csv
   extract/              # ETL extract output

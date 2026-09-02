@@ -43,6 +43,22 @@ def router_node(state:DataAgentSchema):
 
     return state
 
+
+def route_safety_eval(state: DataAgentSchema) -> dict:
+    """Fail-closed: only sql or etl may continue."""
+    if state.route_response in ("sql", "etl"):
+        print("Route safety: passed.")
+        return {"route_safe": "Yes", "route_safety_comments": ""}
+    comments = f"Invalid route {state.route_response!r}; expected sql or etl."
+    print(f"Route safety: blocked. {comments}")
+    return {"route_safe": "No", "route_safety_comments": comments}
+
+
+def route_rejected_node(state: DataAgentSchema) -> dict:
+    content = state.route_safety_comments or "Request was not routed to SQL or ETL."
+    return {"messages": [AIMessage(content=content)]}
+
+
 def etl_node(state:DataAgentSchema):
     """Hand the user question to the ETL subgraph."""
 
@@ -84,39 +100,48 @@ def sql_node(state:DataAgentSchema):
 data_agent_graph = StateGraph(DataAgentSchema)
 
 data_agent_graph.add_node("router_node", router_node)
+data_agent_graph.add_node("route_safety_eval", route_safety_eval)
+data_agent_graph.add_node("route_rejected_node", route_rejected_node)
 data_agent_graph.add_node("etl_node", etl_node)
 data_agent_graph.add_node("sql_node", sql_node)
 
-# Every run starts at the classifier.
+# Every run starts at the classifier, then a fail-closed route eval.
 data_agent_graph.add_edge(START, "router_node")
+data_agent_graph.add_edge("router_node", "route_safety_eval")
 
 def route_edge(state: DataAgentSchema) -> str:
     """Map the router classification to the next graph node."""
+    if state.route_safe != "Yes":
+        return "route_rejected_node"
     if state.route_response == "sql":
         return "sql_node"
     elif state.route_response == "etl":
         return "etl_node"
     else:
-        raise ValueError(f"Invalid route response: {state.route_response}")
+        return "route_rejected_node"
 
 
-# After router_node, branch on route_edge's return value.
-# The dict lists allowed destinations so LangGraph can compile and draw the graph.
-data_agent_graph.add_conditional_edges("router_node", route_edge,
+# After route_safety_eval, branch on route_edge's return value.
+data_agent_graph.add_conditional_edges("route_safety_eval", route_edge,
                                       {
                                           "sql_node": "sql_node",
-                                          "etl_node": "etl_node"
+                                          "etl_node": "etl_node",
+                                          "route_rejected_node": "route_rejected_node",
                                       })
+data_agent_graph.add_edge("route_rejected_node", END)
 
 # one data_agent for the whole app; 
 # per-user state only if you add persistence + thread_id; 
 # compaction only once you keep a long message history.
 data_agent = data_agent_graph.compile()
 
-# Optional
-graph_png = data_agent.get_graph().draw_mermaid_png()
-with open("data_agent_graph.png", "wb") as f:
-    f.write(graph_png)
+# Optional graph image; skip if mermaid.ink is unreachable.
+try:
+    graph_png = data_agent.get_graph().draw_mermaid_png()
+    with open("data_agent_graph.png", "wb") as f:
+        f.write(graph_png)
+except Exception as exc:
+    print(f"Could not render data_agent_graph.png: {exc}")
 
 if __name__ == "__main__":
 

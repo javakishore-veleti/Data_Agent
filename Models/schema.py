@@ -10,10 +10,14 @@ class AgentSchema(BaseModel):
     user_question: str = Field(..., description="The user question of the agent." )
     curated_question : str = Field(..., description="The curated question of the agent." )
     prompt_query_context: str = Field(..., description="The prompt query context of the agent." )
-    is_safe: Literal["Yes", "No"] = Field(..., description="Whether the agent is safe." )
+    is_safe: Literal["Yes", "No"] = Field(..., description="Whether the LLM judge considers the SQL safe." )
     generated_sql_query: str = Field(..., description="The generated SQL query of the agent." )
     sql_execution_result: str = Field(..., description="The SQL execution result of the agent." )
     final_answer: str = Field(..., description="The final answer of the agent." )
+    comments: str = Field(default="", description="LLM judge comments on SQL safety." )
+    keyword_safe: Literal["Yes", "No"] = Field(default="No", description="Fail-closed SQL keyword eval." )
+    keyword_comments: str = Field(default="", description="Why the keyword eval passed or failed." )
+
 
 class JudgeSchema(BaseModel):
     answer : Literal["Yes","No"] = Field(..., description="Indicates whether the generated SQL query is safe to execute or not")
@@ -22,6 +26,8 @@ class JudgeSchema(BaseModel):
 
 class ETLAgentSchema(BaseModel):
     messages : Annotated[list,add] = Field(..., description="List of messages to be processed by the ETL agent")
+    etl_safe: Literal["Yes", "No"] = Field(default="No", description="Fail-closed ETL tool-arg eval." )
+    etl_safety_comments: str = Field(default="", description="Why the ETL tool call was allowed or blocked." )
 
 class RouterSchema(BaseModel):
     """Structured classifier output used by llm_router to pick SQL vs ETL."""
@@ -30,4 +36,6 @@ class RouterSchema(BaseModel):
 
 class DataAgentSchema(BaseModel):
     messages : Annotated[list,add] = Field(..., description="List of messages to be processed by the Data agent")
-    route_response : str = Field(..., description="The response from the router indicating whether to route to SQL or ETL operations")    
+    route_response : str = Field(..., description="The response from the router indicating whether to route to SQL or ETL operations")
+    route_safe: Literal["Yes", "No"] = Field(default="No", description="Fail-closed router eval: sql or etl only." )
+    route_safety_comments: str = Field(default="", description="Why the route was allowed or rejected." ) 
