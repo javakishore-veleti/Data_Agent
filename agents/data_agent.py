@@ -49,7 +49,7 @@ def router_node(state:DataAgentSchema):
 def route_safety_eval(state: DataAgentSchema) -> dict:
     """Fail-closed: only sql or etl may continue."""
     if state.route_response in ("sql", "etl"):
-        logger.debug("Route safety: passed.")
+        logger.info("Route safety: passed.")
         return {"route_safe": "Yes", "route_safety_comments": ""}
     comments = f"Invalid route {state.route_response!r}; expected sql or etl."
     logger.warning("Route safety: blocked. %s", comments)

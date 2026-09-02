@@ -90,7 +90,7 @@ def generate_sql(state: AgentSchema) -> AgentSchema:
 def keyword_sql_eval(state: AgentSchema) -> dict:
     """Fail-closed keyword / multi-statement check. No LLM."""
     ok, reason = sql_keyword_eval(state.generated_sql_query)
-    logger.debug("SQL keyword eval: %s", reason)
+    logger.info("SQL keyword eval: %s (%s)", "passed" if ok else "blocked", reason)
     return {
         "keyword_safe": "Yes" if ok else "No",
         "keyword_comments": reason,
@@ -121,8 +121,11 @@ def is_safe_sql(state: AgentSchema) -> dict:
     elif isinstance(judge_result, dict):
         answer, comments = judge_result["answer"], judge_result["comments"]
     else:
-        return {"is_safe": "No", "comments": f"Unexpected judge output type: {type(judge_result)}"}
+        comments = f"Unexpected judge output type: {type(judge_result)}"
+        logger.warning("SQL judge eval: blocked. %s", comments)
+        return {"is_safe": "No", "comments": comments}
 
+    logger.info("SQL judge eval: %s%s", answer, f" ({comments})" if comments else "")
     return {"is_safe": answer, "comments": comments}
 
 
@@ -137,7 +140,7 @@ def sql_safety_consensus(state: AgentSchema) -> dict:
         combined = " ".join(reasons)
         logger.warning("SQL safety consensus: blocked. %s", combined)
         return {"is_safe": "No", "comments": combined}
-    logger.debug("SQL safety consensus: passed.")
+    logger.info("SQL safety consensus: passed.")
     return {"is_safe": "Yes"}
 
 

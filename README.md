@@ -193,7 +193,7 @@ npm run graph
 
 `main.py` asks the agent to extract [PokeAPI](https://pokeapi.co/api/v2/pokemon) into `data/extract` as CSV. That should route to ETL.
 
-Default logging is `INFO` (last assistant reply, plus warnings/errors). Route/safety pass lines, prompts, generated SQL, and the full graph state are `DEBUG`:
+Default logging is `INFO` (eval outcomes, last assistant reply, plus warnings/errors). Prompts, generated SQL, and the full graph state are `DEBUG`:
 
 ```bash
 npm run start:debug

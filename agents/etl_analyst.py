@@ -145,7 +145,7 @@ def etl_tool_safety_eval(state: ETLAgentSchema) -> dict:
             "etl_safety_comments": comments,
             "messages": blocked_messages,
         }
-    logger.debug("ETL tool safety: passed.")
+    logger.info("ETL tool safety: passed.")
     return {"etl_safe": "Yes", "etl_safety_comments": ""}
 
 
