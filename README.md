@@ -1,8 +1,16 @@
 # Data Agent
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-agent-1C3C3C)](https://github.com/langchain-ai/langgraph)
+[![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9?logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
+[![LangChain](https://img.shields.io/badge/LangChain-1.3%2B-1C3C3C)](https://www.langchain.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-1.2%2B-1C3C3C)](https://github.com/langchain-ai/langgraph)
+[![Pydantic](https://img.shields.io/badge/Pydantic-2-E92063?logo=pydantic&logoColor=white)](https://docs.pydantic.dev/)
+[![Postgres](https://img.shields.io/badge/Postgres-SQL%20path-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Pandas](https://img.shields.io/badge/Pandas-ETL%20path-150458?logo=pandas&logoColor=white)](https://pandas.pydata.org/)
+[![OpenAI](https://img.shields.io/badge/OpenAI-SQL%20models-412991?logo=openai&logoColor=white)](https://openai.com/)
+[![Anthropic](https://img.shields.io/badge/Anthropic-Claude%20router%20%26%20ETL-D4A27F?logo=anthropic&logoColor=black)](https://www.anthropic.com/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/javakishore-veleti/Data_Agent)](https://github.com/javakishore-veleti/Data_Agent/commits/main)
 
 ![Data Agent banner](docs/banner.png)
 
