@@ -17,6 +17,7 @@ from agents.sql_analyst import sql_analyst
 
 llm = pick_llm("claude")
 
+# Force the LLM to return RouterSchema (answer: "sql" | "etl") instead of free-form text.
 llm_router = llm.with_structured_output(RouterSchema)
 
 
@@ -24,9 +25,11 @@ llm_router = llm.with_structured_output(RouterSchema)
 
 
 def router_node(state:DataAgentSchema):
+    """Classify the latest user message as SQL or ETL and store the route on state."""
 
     message = state.messages[-1].content
 
+    # Structured output may be a Pydantic model or a dict depending on the LLM wrapper.
     route_result = llm_router.invoke(message)
     if isinstance(route_result, RouterSchema):
         route_response = route_result.answer
@@ -36,10 +39,12 @@ def router_node(state:DataAgentSchema):
         raise TypeError(f"Unexpected router output type: {type(route_result)}")
 
     state.route_response = route_response
+    print(f"Route response: {state.route_response}")
 
     return state
 
 def etl_node(state:DataAgentSchema):
+    """Hand the user question to the ETL subgraph."""
 
     message = state.messages[-1].content
 
@@ -53,6 +58,7 @@ def etl_node(state:DataAgentSchema):
     return state
 
 def sql_node(state:DataAgentSchema):
+    """Hand the user question to the SQL subgraph."""
 
     message = state.messages[-1].content
 
@@ -79,9 +85,11 @@ data_agent_graph.add_node("router_node", router_node)
 data_agent_graph.add_node("etl_node", etl_node)
 data_agent_graph.add_node("sql_node", sql_node)
 
+# Every run starts at the classifier.
 data_agent_graph.add_edge(START, "router_node")
 
 def route_edge(state: DataAgentSchema) -> str:
+    """Map the router classification to the next graph node."""
     if state.route_response == "sql":
         return "sql_node"
     elif state.route_response == "etl":
@@ -90,6 +98,8 @@ def route_edge(state: DataAgentSchema) -> str:
         raise ValueError(f"Invalid route response: {state.route_response}")
 
 
+# After router_node, branch on route_edge's return value.
+# The dict lists allowed destinations so LangGraph can compile and draw the graph.
 data_agent_graph.add_conditional_edges("router_node", route_edge,
                                       {
                                           "sql_node": "sql_node",

@@ -24,6 +24,7 @@ class ETLAgentSchema(BaseModel):
     messages : Annotated[list,add] = Field(..., description="List of messages to be processed by the ETL agent")
 
 class RouterSchema(BaseModel):
+    """Structured classifier output used by llm_router to pick SQL vs ETL."""
     answer: Literal["sql","etl"] = Field(..., description="Indicates whether the user's question is related to SQL or ETL operations")
     comments: str = Field(..., description="Additional comments or feedback regarding the classification of the user's question")
 
