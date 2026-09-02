@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -123,3 +124,77 @@ def validate_etl_tool(name: str, args: dict) -> tuple[bool, str]:
             return ok, reason
         return format_is_allowed(str(args.get("output_format", "")))
     return False, f"Unknown ETL tool: {name}."
+
+
+def resolve_project_path(path_str: str) -> Path:
+    raw = Path(path_str)
+    return raw.resolve() if raw.is_absolute() else (PROJECT_ROOT / raw).resolve()
+
+
+def sql_result_eval(result: object) -> tuple[bool, str]:
+    """After execute: fail closed if the driver returned nothing or an error string."""
+    if result is None:
+        return False, "SQL execution returned no result."
+    text = as_text(result).strip()
+    if not text or text.lower() in {"none", "null"}:
+        return False, "SQL execution result was empty."
+    lowered = text.lower()
+    if lowered.startswith("error") or "error executing" in lowered:
+        return False, f"SQL execution error: {text[:200]}"
+    return True, "SQL execution returned a result."
+
+
+def _extract_saved_path(observation: str) -> Path | None:
+    match = re.search(r"saved to (.+)$", as_text(observation), re.IGNORECASE | re.MULTILINE)
+    if not match:
+        return None
+    return Path(match.group(1).strip())
+
+
+def eval_etl_tool_result(name: str, args: dict, observation: object) -> tuple[bool, str]:
+    """After tool_node: fail closed if the write failed or the output file is missing/empty."""
+    args = args or {}
+    text = as_text(observation).strip()
+    lowered = text.lower()
+    if not text:
+        return False, f"{name} returned an empty observation."
+    if lowered.startswith("blocked:") or lowered.startswith("transform blocked:") or lowered.startswith("failed"):
+        return False, text[:300]
+
+    if name == "extract_load_tool":
+        saved = _extract_saved_path(text)
+        fmt = str(args.get("format") or "csv").lstrip(".")
+        folder = str(args.get("output_folder") or "")
+        expected = saved or (resolve_project_path(folder) / f"extracted_data.{fmt}")
+        ok, reason = path_is_under_data(str(expected))
+        if not ok:
+            return False, reason
+        if not expected.is_file():
+            return False, f"Extract output missing: {expected}"
+        size = expected.stat().st_size
+        if size <= 0:
+            return False, f"Extract output is empty: {expected}"
+        return True, f"Extract wrote {expected} ({size} bytes)."
+
+    if name == "transform_load_tool":
+        if "failed to execute" in lowered:
+            return False, text[:300]
+        folder = resolve_project_path(str(args.get("output_folder") or ""))
+        ok, reason = path_is_under_data(str(folder))
+        if not ok:
+            return False, reason
+        if not folder.is_dir():
+            return False, f"Transform output folder missing: {folder}"
+        fmt = str(args.get("output_format") or "csv").lstrip(".")
+        cutoff = time.time() - 300
+        matches = [
+            path
+            for path in folder.glob(f"*.{fmt}")
+            if path.is_file() and path.stat().st_size > 0 and path.stat().st_mtime >= cutoff
+        ]
+        if not matches:
+            return False, f"No non-empty .{fmt} file written under {folder}."
+        newest = max(matches, key=lambda path: path.stat().st_mtime)
+        return True, f"Transform wrote {newest} ({newest.stat().st_size} bytes)."
+
+    return False, f"Unknown ETL tool result: {name}."

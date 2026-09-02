@@ -71,11 +71,13 @@ START
 
 ```text
 curate_ques → prompt_query_context → generate_sql
-                 ├─ keyword_sql_eval     # no LLM: writes / stacked statements
-                 └─ is_safe_sql          # LLM JudgeSchema
+                 ├─ keyword_sql_eval     # before execute
+                 └─ is_safe_sql
                         ↓
-              sql_safety_consensus       # any fail → No
-                 ├─ Yes → execute_sql → represent_final_answer → END
+              sql_safety_consensus
+                 ├─ Yes → execute_sql → sql_after_eval
+                 │                         ├─ Yes → represent_final_answer → END
+                 │                         └─ No  → sql_result_failed → END
                  └─ No  → canceled_sql → END
 ```
 
@@ -84,8 +86,10 @@ curate_ques → prompt_query_context → generate_sql
 ```text
 START → llm_node → (tool calls?)
                  ├─ no  → END
-                 └─ yes → etl_tool_safety_eval   # URL, format, path under data/
-                            ├─ Yes → tool_node → llm_node
+                 └─ yes → etl_tool_safety_eval   # before tools
+                            ├─ Yes → tool_node → etl_result_eval
+                            │                       ├─ Yes → llm_node
+                            │                       └─ No  → etl_result_failed → END
                             └─ No  → llm_node (blocked ToolMessage, no exec)
 ```
 
@@ -100,19 +104,29 @@ ETL tools:
 
 ## Evaluation and in-graph safety
 
-This project does **not** add commercial eval or observability products (Galileo, LangSmith, Arize, Langfuse Cloud, Braintrust, W&B, Confident AI, and similar). Safety lives in the graphs and in local tests.
+This project does **not** add commercial eval or observability products (Galileo, LangSmith, Arize, Langfuse Cloud, Braintrust, W&B, Confident AI, and similar). An **eval** here is a fail-closed graph node (or a helper it calls) that returns **pass or fail** and can **stop** the next risky step. No score averaging.
 
-**In the graph (fail closed):** extra nodes after a risky step, then a consensus that **stops** if any check fails — no averaging LLM scores.
+**Tool safety is an eval.** `etl_tool_safety_eval` is the ETL **before-tool** gate. `etl_result_eval` is the **after-tool** gate (file exists and is non-empty).
 
-| Pipeline | Checks |
-| --- | --- |
-| Router | `route_safety_eval`: `answer` is only `sql` or `etl` |
-| SQL | `keyword_sql_eval` + `is_safe_sql` → `sql_safety_consensus`; any fail → `canceled_sql` |
-| ETL | `etl_tool_safety_eval` before tools; Pandas pattern check before `exec` |
+| Core section | Before | After |
+| --- | --- | --- |
+| SQL execution | `keyword_sql_eval` + `is_safe_sql` → `sql_safety_consensus` | `sql_after_eval` on the driver result; fail → `sql_result_failed` |
+| ETL pipeline | `etl_tool_safety_eval` before `tool_node`; `pandas_code_is_safe` before `exec` | `etl_result_eval` on the written file; fail → `etl_result_failed` |
 
-**Offline:** **pytest** plus gold JSON (router `sql` vs `etl`, judge Yes/No on fixed queries, ETL file fixtures). No LLM-as-a-service leaderboard.
+| Eval | Why | What it does | Library | Input | Output |
+| --- | --- | --- | --- | --- | --- |
+| `route_safety_eval` | Router must only send `sql` or `etl` | Allow those two labels; otherwise `route_rejected_node` | None (Python `in`) | `route_response` | `route_safe` Yes/No + comments |
+| `keyword_sql_eval` | Block writes and stacked SQL without an LLM | Regex + statement split in `utils/safety.py` | stdlib `re` | `generated_sql_query` | `keyword_safe` Yes/No + reason |
+| `is_safe_sql` | Second opinion: read-only intent | LLM returns `JudgeSchema` | LangChain `with_structured_output`, OpenAI (`pick_llm("medium")`) | `generated_sql_query` | `is_safe` Yes/No + comments |
+| `sql_safety_consensus` | Any pre-exec fail must veto execute | AND the two SQL evals; fail closed | None | `keyword_safe`, `is_safe`, comments | `is_safe` Yes → `execute_sql`; No → `canceled_sql` |
+| `sql_after_eval` | Do not summarize a missing/error result | `sql_result_eval`: reject `None`, empty, or error strings | stdlib | `sql_execution_result` | `sql_result_safe` Yes → `represent_final_answer`; No → `sql_result_failed` |
+| `etl_tool_safety_eval` (**tool safety**) | Do not GET or write until args are allowed | `validate_etl_tool`: http(s) URL, path under `data/extract` or `data/transform`, format csv/json/parquet | stdlib `pathlib`, `urllib.parse` | last AI `tool_calls` | `etl_safe` Yes → `tool_node`; No → blocked `ToolMessage`, no exec |
+| `pandas_code_is_safe` | Generated Pandas is `exec`'d | Ban `os.system`, `subprocess`, nested `eval`/`exec`, etc. | stdlib string match | Pandas snippet inside `transform_load_tool` | allow `exec` or return `Transform blocked: …` |
+| `etl_result_eval` | Confirm the pipeline actually wrote data | `eval_etl_tool_result`: extract file exists and size > 0; transform folder has a fresh non-empty file | stdlib `pathlib` | tool args + `ToolMessage` | `etl_result_safe` Yes → `llm_node`; No → `etl_result_failed` |
 
-The SQL subgraph keeps the LLM gate (`is_safe_sql`). The keyword check runs beside it and **vetoes** execution. Helpers live in `utils/safety.py`.
+Helpers live in `utils/safety.py`. The SQL LLM gate (`is_safe_sql`) stays; the keyword check runs **beside** it and can still veto.
+
+**Offline (not in-graph, not implemented yet):** pytest plus gold JSON (router `sql` vs `etl`, judge Yes/No on fixed queries, ETL path fixtures). No LLM-as-a-service leaderboard.
 
 ## Repository layout
 

@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.logging_config import log_run_result
 from utils.llm_pickup import pick_llm
 from utils.database import DatabaseUtil
-from utils.safety import as_text, sql_keyword_eval
+from utils.safety import as_text, sql_keyword_eval, sql_result_eval
 from Models.schema import AgentSchema, JudgeSchema
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import StateGraph, START, END
@@ -172,15 +172,38 @@ def execute_sql(state: AgentSchema) -> AgentSchema:
 
     execution_result = obj.execute_sql(sql_query)  # Execute the SQL query on the database
 
-    state.sql_query_execution_result = execution_result
+    result_text = "" if execution_result is None else str(execution_result)
+    state.sql_execution_result = result_text
 
     return state
+
+
+def sql_after_eval(state: AgentSchema) -> dict:
+    """Fail-closed check after execute_sql. Empty or error results do not go to the summarizer."""
+    result = state.sql_execution_result
+    ok, reason = sql_result_eval(result)
+    if ok:
+        logger.info("SQL result eval: passed. %s", reason)
+        return {"sql_result_safe": "Yes", "sql_result_comments": reason}
+    logger.warning("SQL result eval: blocked. %s", reason)
+    return {"sql_result_safe": "No", "sql_result_comments": reason}
+
+
+def sql_result_failed(state: AgentSchema) -> dict:
+    content = (
+        "SQL ran but the result eval failed. "
+        f"{state.sql_result_comments or 'No result to summarize.'}"
+    )
+    return {
+        "final_answer": content,
+        "messages": [AIMessage(content=content)],
+    }
 
 
 # Represent the final answer Node
 def represent_final_answer(state: AgentSchema) -> AgentSchema:
 
-    execution_result = state.sql_query_execution_result
+    execution_result = state.sql_execution_result or getattr(state, "sql_query_execution_result", "")
     curated_question = state.curated_ques
 
     llm = pick_llm("low")
@@ -216,6 +239,8 @@ sql_agent_graph.add_node(is_safe_sql,name="is_safe_sql")
 sql_agent_graph.add_node(sql_safety_consensus,name="sql_safety_consensus")
 sql_agent_graph.add_node(canceled_sql,name="canceled_sql")
 sql_agent_graph.add_node(execute_sql,name="execute_sql")
+sql_agent_graph.add_node(sql_after_eval,name="sql_after_eval")
+sql_agent_graph.add_node(sql_result_failed,name="sql_result_failed")
 sql_agent_graph.add_node(represent_final_answer,name="represent_final_answer")
 
 # Edges
@@ -247,7 +272,22 @@ sql_agent_graph.add_conditional_edges("sql_safety_consensus", is_safe_sql_edge,
 # sql_agent_graph.add_edge("is_safe_sql", "canceled_sql")
 
 sql_agent_graph.add_edge("canceled_sql", END)
-sql_agent_graph.add_edge("execute_sql", "represent_final_answer")
+sql_agent_graph.add_edge("execute_sql", "sql_after_eval")
+
+def sql_after_eval_edge(state: AgentSchema) -> str:
+    if state.sql_result_safe == "Yes":
+        return "represent_final_answer"
+    return "sql_result_failed"
+
+sql_agent_graph.add_conditional_edges(
+    "sql_after_eval",
+    sql_after_eval_edge,
+    {
+        "represent_final_answer": "represent_final_answer",
+        "sql_result_failed": "sql_result_failed",
+    },
+)
+sql_agent_graph.add_edge("sql_result_failed", END)
 sql_agent_graph.add_edge("represent_final_answer", END)
 
 # Compile the Graph
@@ -278,8 +318,5 @@ if __name__ == "__main__":
     sql_analyst_response = sql_analyst.invoke(input_schema)
     log_run_result(logger, sql_analyst_response)
     logger.debug("generated_sql_query=%s", sql_analyst_response.get("generated_sql_query"))
-    logger.debug(
-        "sql_query_execution_result=%s",
-        sql_analyst_response.get("sql_query_execution_result"),
-    )
+    logger.debug("sql_execution_result=%s", sql_analyst_response.get("sql_execution_result"))
     logger.debug("prompt_query_context=%s", sql_analyst_response.get("prompt_query_context"))

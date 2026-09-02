@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.logging_config import log_run_result
 from utils.llm_pickup import pick_llm
 from utils.etl_tools import ETLTools
-from utils.safety import as_text, pandas_code_is_safe, validate_etl_tool
+from utils.safety import as_text, pandas_code_is_safe, validate_etl_tool, eval_etl_tool_result
 from Models.schema import ETLAgentSchema
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph import StateGraph, START, END
@@ -169,7 +169,56 @@ def tool_node(state:ETLAgentSchema):
 
     state.messages = state.messages + tools_results
 
-    return state   
+    return state
+
+
+def _last_tool_round(messages):
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if getattr(message, "tool_calls", None):
+            return message, index
+    return None, -1
+
+
+def etl_result_eval(state: ETLAgentSchema) -> dict:
+    """Fail-closed check after tool_node: output file exists and is non-empty."""
+    ai_message, ai_index = _last_tool_round(state.messages)
+    if ai_message is None:
+        reason = "ETL result eval found no tool call to check."
+        logger.warning("ETL result eval: blocked. %s", reason)
+        return {"etl_result_safe": "No", "etl_result_comments": reason}
+
+    observations = {}
+    for message in state.messages[ai_index + 1 :]:
+        call_id = getattr(message, "tool_call_id", None)
+        if call_id:
+            observations[call_id] = getattr(message, "content", "")
+
+    reasons: list[str] = []
+    passed: list[str] = []
+    for name, args, call_id in _iter_tool_calls(ai_message):
+        ok, reason = eval_etl_tool_result(name, args, observations.get(call_id, ""))
+        if ok:
+            passed.append(reason)
+        else:
+            reasons.append(reason)
+
+    if reasons:
+        comments = "; ".join(reasons)
+        logger.warning("ETL result eval: blocked. %s", comments)
+        return {"etl_result_safe": "No", "etl_result_comments": comments}
+
+    comments = "; ".join(passed)
+    logger.info("ETL result eval: passed. %s", comments)
+    return {"etl_result_safe": "Yes", "etl_result_comments": comments}
+
+
+def etl_result_failed(state: ETLAgentSchema) -> dict:
+    content = (
+        "ETL tools ran but the result eval failed. "
+        f"{state.etl_result_comments or 'Output file was missing or empty.'}"
+    )
+    return {"messages": [AIMessage(content=content)]}   
 
 
 # Nodes & Edges
@@ -177,6 +226,8 @@ etl_analyst_graph = StateGraph(ETLAgentSchema)
 etl_analyst_graph.add_node("llm_node", llm_node)
 etl_analyst_graph.add_node("etl_tool_safety_eval", etl_tool_safety_eval)
 etl_analyst_graph.add_node("tool_node", tool_node)
+etl_analyst_graph.add_node("etl_result_eval", etl_result_eval)
+etl_analyst_graph.add_node("etl_result_failed", etl_result_failed)
 
 etl_analyst_graph.add_edge(START, "llm_node")
 
@@ -211,7 +262,22 @@ etl_analyst_graph.add_conditional_edges(
     },
 )
 
-etl_analyst_graph.add_edge("tool_node", "llm_node")
+etl_analyst_graph.add_edge("tool_node", "etl_result_eval")
+
+def etl_result_edge(state: ETLAgentSchema) -> str:
+    if state.etl_result_safe == "Yes":
+        return "llm_node"
+    return "etl_result_failed"
+
+etl_analyst_graph.add_conditional_edges(
+    "etl_result_eval",
+    etl_result_edge,
+    {
+        "llm_node": "llm_node",
+        "etl_result_failed": "etl_result_failed",
+    },
+)
+etl_analyst_graph.add_edge("etl_result_failed", END)
 
 etl_analyst = etl_analyst_graph.compile()
 

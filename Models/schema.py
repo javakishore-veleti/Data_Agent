@@ -17,6 +17,8 @@ class AgentSchema(BaseModel):
     comments: str = Field(default="", description="LLM judge comments on SQL safety." )
     keyword_safe: Literal["Yes", "No"] = Field(default="No", description="Fail-closed SQL keyword eval." )
     keyword_comments: str = Field(default="", description="Why the keyword eval passed or failed." )
+    sql_result_safe: Literal["Yes", "No"] = Field(default="No", description="Fail-closed eval after SQL execute." )
+    sql_result_comments: str = Field(default="", description="Why the SQL result eval passed or failed." )
 
 
 class JudgeSchema(BaseModel):
@@ -28,6 +30,8 @@ class ETLAgentSchema(BaseModel):
     messages : Annotated[list,add] = Field(..., description="List of messages to be processed by the ETL agent")
     etl_safe: Literal["Yes", "No"] = Field(default="No", description="Fail-closed ETL tool-arg eval." )
     etl_safety_comments: str = Field(default="", description="Why the ETL tool call was allowed or blocked." )
+    etl_result_safe: Literal["Yes", "No"] = Field(default="No", description="Fail-closed eval after ETL tools run." )
+    etl_result_comments: str = Field(default="", description="Why the ETL result eval passed or failed." )
 
 class RouterSchema(BaseModel):
     """Structured classifier output used by llm_router to pick SQL vs ETL."""
