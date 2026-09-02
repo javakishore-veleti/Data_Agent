@@ -1,8 +1,10 @@
+import logging
 import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from utils.logging_config import log_run_result
 from utils.llm_pickup import pick_llm
 from utils.etl_tools import ETLTools
 from utils.safety import as_text, pandas_code_is_safe, validate_etl_tool
@@ -11,6 +13,8 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph import StateGraph, START, END
 from langchain.tools import tool
 from langchain_anthropic import ChatAnthropic
+
+logger = logging.getLogger(__name__)
 
 
 #------------------------------------ AGENT TOOLS ------------------------------------#
@@ -135,13 +139,13 @@ def etl_tool_safety_eval(state: ETLAgentSchema) -> dict:
             )
     if reasons:
         comments = "; ".join(reasons)
-        print(f"ETL tool safety: blocked. {comments}")
+        logger.warning("ETL tool safety: blocked. %s", comments)
         return {
             "etl_safe": "No",
             "etl_safety_comments": comments,
             "messages": blocked_messages,
         }
-    print("ETL tool safety: passed.")
+    logger.debug("ETL tool safety: passed.")
     return {"etl_safe": "Yes", "etl_safety_comments": ""}
 
 
@@ -235,4 +239,4 @@ if __name__ == "__main__":
 # """)]}
 #     )    
 
-    print(response)
+    log_run_result(logger, response)

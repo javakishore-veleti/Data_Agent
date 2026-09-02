@@ -1,0 +1,13 @@
+{
+  "name": "data-agent",
+  "private": true,
+  "description": "LangGraph data agent: route a request to SQL or ETL",
+  "scripts": {
+    "start": "uv run python main.py",
+    "start:debug": "LOG_LEVEL=DEBUG uv run python main.py",
+    "agent": "uv run python main.py",
+    "graph": "uv run python main.py",
+    "etl": "uv run python agents/etl_analyst.py",
+    "sql": "uv run python agents/sql_analyst.py"
+  }
+}

@@ -1,7 +1,15 @@
+import logging
+
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from dotenv import load_dotenv
+
+from utils.logging_config import configure_logging
+
 load_dotenv()
+configure_logging()
+
+logger = logging.getLogger(__name__)
 
 def pick_llm(level: str):
     """
@@ -28,5 +36,5 @@ def pick_llm(level: str):
     return llm
 
 if __name__ == "__main__":
-    llm_obj = pick_llm("low")  
-    print(llm_obj.invoke("What is the capital of France?"))
+    llm_obj = pick_llm("low")
+    logger.info("%s", llm_obj.invoke("What is the capital of France?"))

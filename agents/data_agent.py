@@ -1,9 +1,10 @@
+import logging
 import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from agents import sql_analyst
+from utils.logging_config import log_run_result
 from utils.llm_pickup import pick_llm
 from utils.etl_tools import ETLTools
 from Models.schema import RouterSchema, DataAgentSchema, ETLAgentSchema, AgentSchema
@@ -14,6 +15,7 @@ from langchain_anthropic import ChatAnthropic
 from agents.etl_analyst import etl_analyst
 from agents.sql_analyst import sql_analyst
 
+logger = logging.getLogger(__name__)
 
 llm = pick_llm("claude")
 
@@ -39,7 +41,7 @@ def router_node(state:DataAgentSchema):
         raise TypeError(f"Unexpected router output type: {type(route_result)}")
 
     state.route_response = route_response
-    print(f"Route response: {state.route_response}")
+    logger.debug("Route response: %s", state.route_response)
 
     return state
 
@@ -47,10 +49,10 @@ def router_node(state:DataAgentSchema):
 def route_safety_eval(state: DataAgentSchema) -> dict:
     """Fail-closed: only sql or etl may continue."""
     if state.route_response in ("sql", "etl"):
-        print("Route safety: passed.")
+        logger.debug("Route safety: passed.")
         return {"route_safe": "Yes", "route_safety_comments": ""}
     comments = f"Invalid route {state.route_response!r}; expected sql or etl."
-    print(f"Route safety: blocked. {comments}")
+    logger.warning("Route safety: blocked. %s", comments)
     return {"route_safe": "No", "route_safety_comments": comments}
 
 
@@ -141,7 +143,7 @@ try:
     with open("data_agent_graph.png", "wb") as f:
         f.write(graph_png)
 except Exception as exc:
-    print(f"Could not render data_agent_graph.png: {exc}")
+    logger.warning("Could not render data_agent_graph.png: %s", exc)
 
 if __name__ == "__main__":
 
@@ -152,4 +154,4 @@ if __name__ == "__main__":
         )
     )
 
-    print(response)
+    log_run_result(logger, response)

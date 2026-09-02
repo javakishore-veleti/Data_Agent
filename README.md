@@ -126,9 +126,10 @@ utils/
   safety.py             # fail-closed SQL/ETL/path checks (no commercial evals)
 data/
   users.csv, rides.csv, vehicles.csv, payments.csv, ratings.csv
-  extract/              # ETL extract output
-  transform/            # ETL transform output
+  extract/              # ETL extract output (gitignored; folder kept via .gitkeep)
+  transform/            # ETL transform output (gitignored; folder kept via .gitkeep)
 .env.template           # Postgres settings to copy into .env
+package.json            # npm scripts that wrap uv run
 ```
 
 Sample CSVs are a rideshare-style dataset (users, rides, vehicles, payments, ratings) intended for the SQL path once loaded into Postgres.
@@ -155,6 +156,7 @@ POSTGRES_PORT=5432
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=
 POSTGRES_DB=postgres
+LOG_LEVEL=INFO
 ```
 
 `sql_analyst.py` currently reads `host`, `port`, `user`, `password`, and `database` from the environment when it builds a connection. Set those as well (same values as the `POSTGRES_*` keys) until both paths share one config.
@@ -170,15 +172,40 @@ Load the sample CSVs into the `public` schema of `POSTGRES_DB` before asking SQL
 
 ## Run
 
-From the repo root (so `agents` and `Models` import cleanly):
+From the repo root (so `agents` and `Models` import cleanly). `package.json` wraps the same commands for `npm run`.
+
+```bash
+uv sync
+npm start
+```
+
+Equivalent:
 
 ```bash
 uv run python main.py
+npm run agent
+npm run graph
 ```
 
 `main.py` asks the agent to extract [PokeAPI](https://pokeapi.co/api/v2/pokemon) into `data/extract` as CSV. That should route to ETL.
 
+Default logging is `INFO` (last assistant reply, plus warnings/errors). Route/safety pass lines, prompts, generated SQL, and the full graph state are `DEBUG`:
+
+```bash
+npm run start:debug
+LOG_LEVEL=DEBUG uv run python main.py
+```
+
+Set `LOG_LEVEL` in `.env` (see `.env.template`) or on the command line.
+
 Run a subgraph directly:
+
+```bash
+npm run etl
+npm run sql
+```
+
+Same as:
 
 ```bash
 uv run python agents/etl_analyst.py

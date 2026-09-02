@@ -1,14 +1,18 @@
+import logging
 import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from utils.logging_config import log_run_result
 from utils.llm_pickup import pick_llm
 from utils.database import DatabaseUtil
 from utils.safety import as_text, sql_keyword_eval
 from Models.schema import AgentSchema, JudgeSchema
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import StateGraph, START, END
+
+logger = logging.getLogger(__name__)
 
 
 # -------------------------------------- AI Agent Code--------------------------------------
@@ -63,7 +67,7 @@ def prompt_query_context(state: AgentSchema) -> AgentSchema:
     """    
 
     state.prompt_query_context = prompt
-    print(f"prompt_query_context {prompt}")
+    logger.debug("prompt_query_context %s", prompt)
 
     return state
 
@@ -78,7 +82,7 @@ def generate_sql(state: AgentSchema) -> AgentSchema:
     generated_sql_query = as_text(llm.invoke(prompt).content)
 
     state.generated_sql_query = generated_sql_query
-    print(f"Generated SQL query: {state.generated_sql_query}")
+    logger.debug("Generated SQL query: %s", state.generated_sql_query)
 
     return state
 
@@ -86,7 +90,7 @@ def generate_sql(state: AgentSchema) -> AgentSchema:
 def keyword_sql_eval(state: AgentSchema) -> dict:
     """Fail-closed keyword / multi-statement check. No LLM."""
     ok, reason = sql_keyword_eval(state.generated_sql_query)
-    print(f"SQL keyword eval: {reason}")
+    logger.debug("SQL keyword eval: %s", reason)
     return {
         "keyword_safe": "Yes" if ok else "No",
         "keyword_comments": reason,
@@ -131,9 +135,9 @@ def sql_safety_consensus(state: AgentSchema) -> dict:
         reasons.append(state.comments or "LLM judge rejected the query.")
     if reasons:
         combined = " ".join(reasons)
-        print(f"SQL safety consensus: blocked. {combined}")
+        logger.warning("SQL safety consensus: blocked. %s", combined)
         return {"is_safe": "No", "comments": combined}
-    print("SQL safety consensus: passed.")
+    logger.debug("SQL safety consensus: passed.")
     return {"is_safe": "Yes"}
 
 
@@ -269,15 +273,10 @@ if __name__ == "__main__":
 
     # Execute the Graph
     sql_analyst_response = sql_analyst.invoke(input_schema)
-    print(sql_analyst_response['messages'])  # Print the final output of the graph execution
-    print("********************************")
-
-    print(sql_analyst_response['generated_sql_query'])  # Print the generated SQL query
-
-    print("********************************")
-
-    print(sql_analyst_response['sql_query_execution_result'])  # Print the result of executing the SQL query
-
-    print("********************************")
-
-    print(sql_analyst_response['prompt_query_context'])  # Print the prompt query context
+    log_run_result(logger, sql_analyst_response)
+    logger.debug("generated_sql_query=%s", sql_analyst_response.get("generated_sql_query"))
+    logger.debug(
+        "sql_query_execution_result=%s",
+        sql_analyst_response.get("sql_query_execution_result"),
+    )
+    logger.debug("prompt_query_context=%s", sql_analyst_response.get("prompt_query_context"))

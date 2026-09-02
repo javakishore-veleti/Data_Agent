@@ -1,6 +1,11 @@
+import logging
+
+from utils.logging_config import log_run_result
 from agents.data_agent import data_agent
 from langchain_core.messages import HumanMessage
 from Models.schema import DataAgentSchema
+
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     # one data_agent for the whole app; 
@@ -13,4 +18,4 @@ if __name__ == "__main__":
         )
     )
 
-    print(response)
+    log_run_result(logger, response)

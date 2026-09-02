@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 from typing import TypedDict
@@ -6,7 +7,12 @@ import psycopg2
 from dotenv import load_dotenv
 from psycopg2.extensions import connection as PgConnection
 
+from utils.logging_config import configure_logging
+
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+configure_logging()
+
+logger = logging.getLogger(__name__)
 
 
 class PostgresConfig(TypedDict):
@@ -39,7 +45,7 @@ class DatabaseUtil:
             self.connection = psycopg2.connect(**self.db_config) 
 
         except Exception as e:
-            print(f"Error connecting to the database: {e}")
+            logger.error("Error connecting to the database: %s", e)
             self.connection = None
 
     def schema_details(self,schema_name):
@@ -79,7 +85,7 @@ class DatabaseUtil:
                     schema_info_context = f"{schema_info_context}    {row}\n"
 
         except Exception as e:
-            print(f"Error fetching schema details: {e}")
+            logger.error("Error fetching schema details: %s", e)
             schema_info_context = f"Error fetching schema details: {e}"
 
         finally:
@@ -102,7 +108,7 @@ class DatabaseUtil:
             connection.commit()
             return str(result)
         except Exception as e:
-            print(f"Error executing query: {e}")
+            logger.error("Error executing query: %s", e)
             return None
         finally:
             if cursor:

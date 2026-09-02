@@ -219,3 +219,9 @@ __marimo__/
 
 **/.env
 .env
+
+# ETL runtime output (recreated by extract/transform tools)
+data/extract/*
+!data/extract/.gitkeep
+data/transform/*
+!data/transform/.gitkeep
