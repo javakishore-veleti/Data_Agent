@@ -1,5 +1,11 @@
 # Data Agent
 
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-agent-1C3C3C)](https://github.com/langchain-ai/langgraph)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
+![Data Agent banner](docs/banner.png)
+
 A LangGraph data agent that classifies a natural-language request as **SQL** or **ETL**, then runs the matching subgraph.
 
 - **SQL** — curate the question, generate a Postgres query from live schema, judge it for read-only safety, execute it, and answer in plain language.
