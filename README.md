@@ -55,6 +55,10 @@ You would not replace LangGraph with “just LangChain” unless you flattened t
 
 ## Architecture
 
+Compiled parent graph (router, route eval, SQL / ETL / reject):
+
+![Compiled data agent graph](data_agent_graph.png)
+
 ```text
 START
   → router_node
