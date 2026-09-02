@@ -79,6 +79,8 @@ def sql_node(state:DataAgentSchema):
 
     return state
 
+# Empty LangGraph: nodes/edges come next. DataAgentSchema is the shared state
+# (messages + route_response) that every node receives and returns.
 data_agent_graph = StateGraph(DataAgentSchema)
 
 data_agent_graph.add_node("router_node", router_node)
