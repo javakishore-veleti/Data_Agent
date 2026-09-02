@@ -170,7 +170,9 @@ if __name__ == "__main__":
         f.write(img.data)
 
     response = etl_analyst.invoke(
-        {"messages":[HumanMessage(content="I want to extract the data from the API endpoint 'https://pokeapi.co/api/v2/pokemon' and save it to data/extract folder in the csv folder")]}
+        ETLAgentSchema(
+            messages=[HumanMessage(content="I want to extract the data from the API endpoint 'https://pokeapi.co/api/v2/pokemon' and save it to data/extract folder in the csv folder")],
+        )
     )
 
 #     response = etl_analyst.invoke(
