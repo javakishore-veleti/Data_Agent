@@ -62,6 +62,7 @@ def prompt_query_context(state: AgentSchema) -> AgentSchema:
     """    
 
     state.prompt_query_context = prompt
+    print(f"prompt_query_context {prompt}")
 
     return state
 
@@ -76,6 +77,7 @@ def generate_sql(state: AgentSchema) -> AgentSchema:
     generated_sql_query = llm.invoke(prompt).content  # Generate the SQL query using the LLM
 
     state.generated_sql_query = generated_sql_query
+    print(f"Generated SQL query: {state.generated_sql_query}")
 
     return state
 

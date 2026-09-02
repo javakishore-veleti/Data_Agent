@@ -108,6 +108,9 @@ data_agent_graph.add_conditional_edges("router_node", route_edge,
                                           "etl_node": "etl_node"
                                       })
 
+# one data_agent for the whole app; 
+# per-user state only if you add persistence + thread_id; 
+# compaction only once you keep a long message history.
 data_agent = data_agent_graph.compile()
 
 # Optional
