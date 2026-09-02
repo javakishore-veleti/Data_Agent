@@ -55,7 +55,7 @@ You would not replace LangGraph with “just LangChain” unless you flattened t
 
 ## Architecture
 
-Compiled parent graph (router, route eval, SQL / ETL / reject):
+Compiled parent graph (router, route eval, SQL / ETL / reject). Before/after SQL and ETL evals live in the subgraphs; see the banner above.
 
 ![Compiled data agent graph](data_agent_graph.png)
 
