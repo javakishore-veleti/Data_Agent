@@ -12,7 +12,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/javakishore-veleti/Data_Agent)](https://github.com/javakishore-veleti/Data_Agent/commits/main)
 
-![Data Agent banner](docs/banner.png)
+![Data Agent banner](docs/banner-before-after-evals.png)
 
 A LangGraph data agent that classifies a natural-language request as **SQL** or **ETL**, then runs the matching subgraph.
 
@@ -25,7 +25,7 @@ The router and ETL path use Claude. The SQL path uses OpenAI models of increasin
 
 - [Why LangGraph and LangChain](#why-langgraph-and-langchain)
 - [Architecture](#architecture)
-- [Evaluation and in-graph safety](#evaluation-and-in-graph-safety)
+- [Evals](#evals)
 - [Repository layout](#repository-layout)
 - [Requirements](#requirements)
 - [Setup](#setup)
@@ -102,7 +102,7 @@ ETL tools:
 | `extract_load_tool` | `GET` an API, flatten `results` with Pandas, write `extracted_data.{csv\|json\|parquet}` |
 | `transform_load_tool` | Sample the file, generate Pandas, `exec` it, write into the transform folder |
 
-## Evaluation and in-graph safety
+## Evals
 
 This project does **not** add commercial eval or observability products (Galileo, LangSmith, Arize, Langfuse Cloud, Braintrust, W&B, Confident AI, and similar). An **eval** here is a fail-closed graph node (or a helper it calls) that returns **pass or fail** and can **stop** the next risky step. No score averaging.
 
